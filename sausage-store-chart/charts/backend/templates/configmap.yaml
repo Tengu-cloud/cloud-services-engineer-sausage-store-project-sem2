@@ -17,4 +17,3 @@ data:
   report_path: {{ .Values.env.reportPath }}
   log_path: {{ .Values.env.logPath }}
   mongo_uri: {{ .Values.env.mongoUri }}
-  spring_cloud_vault_enabled: "{{ .Values.env.springCloudVaultEnabled }}"
