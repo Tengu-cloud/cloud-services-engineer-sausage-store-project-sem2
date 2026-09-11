@@ -10,8 +10,6 @@ metadata:
     app.kubernetes.io/managed-by: "{{ .Release.Service }}"
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: sausage-store
-  annotations:
-    helm.sh/hook-weight: "-5"
 spec:
   serviceName: mongodb
   replicas: 1
@@ -33,6 +31,16 @@ spec:
         - containerPort: {{ .Values.mongodb.containerPort }}
         resources:
 {{ toYaml .Values.mongodb.resources | indent 10 }}
+        readinessProbe:
+          exec:
+            command:
+              - mongosh
+              - --eval
+              - db.adminCommand('ping')
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
         volumeMounts:
         - name: mongodb-data
           mountPath: /data/db
@@ -94,8 +102,9 @@ metadata:
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "5"
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
+  backoffLimit: 20
   template:
     metadata:
       labels:
@@ -110,31 +119,45 @@ spec:
             memory: "64Mi"
             cpu: "50m"
           limits:
-            memory: "128Mi"
+            memory: "256Mi"
             cpu: "200m"
         command:
-          - /bin/bash
+          - /bin/sh
           - -c
           - |
-            set -e
-            until mongosh --host mongodb --username {{ .Values.mongodb.env.MONGO_INITDB_ROOT_USERNAME }} --password {{ .Values.mongodb.env.MONGO_INITDB_ROOT_PASSWORD }} --authenticationDatabase admin --eval "db.adminCommand('ping')" >/dev/null 2>&1; do
-              echo "Waiting for MongoDB..."
+            set -eu
+            echo "Waiting for MongoDB..."
+            i=0
+            until mongosh --host mongodb-0.mongodb --username "{{ .Values.mongodb.env.MONGO_INITDB_ROOT_USERNAME }}" --password "{{ .Values.mongodb.env.MONGO_INITDB_ROOT_PASSWORD }}" --authenticationDatabase admin --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1; do
+              i=$((i+1))
+              if [ "$i" -gt 60 ]; then
+                echo "MongoDB is not ready after 5 minutes"
+                exit 1
+              fi
+              echo "MongoDB is not ready yet ($i)..."
               sleep 5
             done
-            mongosh --host mongodb --username {{ .Values.mongodb.env.MONGO_INITDB_ROOT_USERNAME }} --password {{ .Values.mongodb.env.MONGO_INITDB_ROOT_PASSWORD }} --authenticationDatabase admin --eval '
+            echo "MongoDB is up, creating reports user..."
+            mongosh --host mongodb-0.mongodb --username "{{ .Values.mongodb.env.MONGO_INITDB_ROOT_USERNAME }}" --password "{{ .Values.mongodb.env.MONGO_INITDB_ROOT_PASSWORD }}" --authenticationDatabase admin --quiet --eval '
               const dbName = "{{ .Values.mongodb.init.reportsDb }}";
               const user = "{{ .Values.mongodb.init.reportsUser }}";
               const pwd = "{{ .Values.mongodb.init.reportsPassword }}";
               const target = db.getSiblingDB(dbName);
-              if (target.getUser(user)) {
-                print("User already exists");
-              } else {
+              try {
                 target.createUser({
                   user: user,
                   pwd: pwd,
                   roles: [{ role: "readWrite", db: dbName }]
                 });
                 print("User created");
+              } catch (e) {
+                const msg = String(e);
+                if (msg.indexOf("already exists") !== -1 || msg.indexOf("duplicate") !== -1 || e.code === 51003) {
+                  print("User already exists");
+                } else {
+                  throw e;
+                }
               }
             '
+            echo "MongoDB init completed"
 {{- end }}
