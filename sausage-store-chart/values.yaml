@@ -37,6 +37,7 @@ backend:
     reportPath: /logs/reports
     logPath: /logs
     mongoUri: mongodb://reports:reportspassword@mongodb:27017/sausage-store
+    springCloudVaultEnabled: "false"
   service:
     port: 8080
   revisionHistoryLimit: 15
