@@ -45,13 +45,13 @@ backend:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   image: naraka24e1/sausage-backend:latest
   imagePullPolicy: Always
   resources:
     requests:
-      memory: "256Mi"
+      memory: "200Mi"
       cpu: "100m"
     limits:
       memory: "512Mi"
@@ -128,11 +128,11 @@ infra:
     containerPort: 27017
     resources:
       requests:
-        memory: "256Mi"
-        cpu: "100m"
+        memory: "128Mi"
+        cpu: "50m"
       limits:
-        memory: "512Mi"
-        cpu: "500m"
+        memory: "256Mi"
+        cpu: "200m"
     init:
       enabled: true
       reportsUser: reports
